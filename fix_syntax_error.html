@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Boat Archipelago Multiplayer - Host & Join</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js for 3D Graphics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+        body { font-family: 'Outfit', sans-serif; overflow: hidden; user-select: none; }
+        .glass { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.12); }
+        .touch-btn { background: rgba(30, 41, 59, 0.85); border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 1rem; backdrop-filter: blur(8px); }
+        .touch-btn:active { transform: scale(0.90); }
+        .interactive { pointer-events: auto; }
+    </style>
+</head>
+<body class="bg-slate-950 text-white w-screen h-screen relative">
+
+    <!-- Three.js Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <!-- Audio Start Overlay Prompt -->
+    <div id="audio-start-prompt" class="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto hidden">
+        <button id="enable-audio-btn" class="glass px-4 py-2 rounded-full text-xs font-bold text-amber-300 border border-amber-500/40 hover:bg-amber-500/20 transition flex items-center space-x-2 shadow-2xl">
+            <i class="fa-solid fa-volume-high"></i>
+            <span>Enable HD Marine Audio & Hydrodynamics</span>
+        </button>
+    </div>
+
+    <!-- Main Game UI Overlay -->
+    <div id="ui-overlay" class="absolute inset-0 z-10 pointer-events-none hidden flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top HUD -->
+        <div class="w-full flex justify-between items-start interactive">
+            <div class="flex items-center space-x-3">
+                <!-- Stars Score -->
+                <div class="glass px-4 py-2.5 rounded-2xl flex items-center space-x-3 shadow-xl">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg font-bold">
+                        <i class="fa-solid fa-star"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Stars</div>
+                        <div id="score-display" class="text-xl font-extrabold text-amber-300">0</div>
+                    </div>
+                </div>
+
+                <!-- Speedometer -->
+                <div class="glass px-4 py-2.5 rounded-2xl flex items-center space-x-3 shadow-xl">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-lg font-bold">
+                        <i class="fa-solid fa-gauge-high"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Speed</div>
+                        <div id="speed-display" class="text-xl font-extrabold text-cyan-300">0 kn</div>
+                    </div>
+                </div>
+
+                <!-- Active Room Code Indicator -->
+                <div class="glass px-4 py-2.5 rounded-2xl flex items-center space-x-3 shadow-xl hidden sm:flex">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg font-bold">
+                        <i class="fa-solid fa-satellite-dish"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Room Code</div>
+                        <div id="active-room-display" class="text-sm font-extrabold text-indigo-300 tracking-wider">------</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+                <!-- Manual Respawn Button if stuck on land -->
+                <button id="respawn-btn" class="glass px-3.5 py-2.5 rounded-2xl font-bold hover:bg-amber-500/20 text-amber-300 transition flex items-center space-x-2 shadow-xl text-xs sm:text-sm">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    <span class="hidden sm:inline">Respawn</span>
+                </button>
+                <button id="cam-toggle-btn" class="glass px-4 py-2.5 rounded-2xl font-bold hover:bg-slate-800 transition flex items-center space-x-2 shadow-xl text-xs sm:text-sm">
+                    <i class="fa-solid fa-video"></i>
+                    <span id="cam-mode-text" class="hidden sm:inline">Chase Cam</span>
+                </button>
+                <button id="time-toggle-btn" class="glass px-4 py-2.5 rounded-2xl font-bold hover:bg-slate-800 transition flex items-center space-x-2 shadow-xl text-xs sm:text-sm">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Center Notification Toast -->
+        <div id="toast" class="self-center glass px-6 py-3 rounded-2xl text-sm font-semibold tracking-wide text-cyan-300 transition-all duration-300 opacity-0 transform -translate-y-4 shadow-2xl">
+            Welcome to Archipelago Drive!
+        </div>
+
+        <!-- Bottom Row (Bottom Left Chat, Touch Controls on Right) -->
+        <div class="w-full flex justify-between items-end">
+            <!-- In-game Chat Box (Bottom Left Corner) -->
+            <div class="w-72 sm:w-80 flex flex-col justify-end space-y-2 pointer-events-none mb-2">
+                <div id="chat-messages" class="space-y-1 max-h-36 overflow-y-auto p-3 glass rounded-2xl text-xs sm:text-sm interactive shadow-lg">
+                    <div class="text-slate-400 italic">Realistic Water Physics & Collision Physics Active! WASD/Arrows to drive. Hold Shift for Boost.</div>
+                </div>
+                <div class="flex space-x-2 interactive">
+                    <input type="text" id="chat-input" placeholder="Type a message..." class="glass px-3.5 py-2.5 rounded-xl text-xs sm:text-sm flex-1 outline-none focus:ring-2 focus:ring-cyan-400 bg-slate-900/80 text-white">
+                    <button id="chat-send-btn" class="bg-cyan-600 hover:bg-cyan-500 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition shadow-lg">Send</button>
+                </div>
+            </div>
+
+            <!-- Mobile Touch Controls -->
+            <div id="touch-controls" class="sm:hidden flex justify-between items-end mb-2 space-x-4 interactive">
+                <div class="flex flex-col items-center space-y-2">
+                    <button id="btn-up" class="touch-btn w-14 h-14 text-xl text-white"><i class="fa-solid fa-chevron-up"></i></button>
+                    <div class="flex space-x-2">
+                        <button id="btn-left" class="touch-btn w-14 h-14 text-xl text-white"><i class="fa-solid fa-chevron-left"></i></button>
+                        <button id="btn-down" class="touch-btn w-14 h-14 text-xl text-white"><i class="fa-solid fa-chevron-down"></i></button>
+                        <button id="btn-right" class="touch-btn w-14 h-14 text-xl text-white"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <button id="btn-boost" class="touch-btn w-16 h-16 text-amber-400 border-amber-400 font-bold text-xs uppercase flex flex-col items-center justify-center">
+                    <i class="fa-solid fa-bolt text-lg"></i>
+                    <span>BOOST</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lobby / Host & Join Room Screen -->
+    <div id="lobby-modal" class="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="glass max-w-lg w-full p-8 rounded-3xl shadow-2xl border border-slate-700/60 space-y-6">
+            <div class="text-center space-y-2">
+                <div class="w-16 h-16 bg-cyan-500/20 text-cyan-400 rounded-2xl mx-auto flex items-center justify-center text-3xl font-bold mb-3 shadow-inner">
+                    <i class="fa-solid fa-ship"></i>
+                </div>
+                <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Archipelago Boat Drive</h1>
+                <p class="text-xs text-slate-400">Realistic Hydrodynamics, Water Reflections & Multiplayer Physics</p>
+            </div>
+
+            <!-- Captain Name Input -->
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Captain Name</label>
+                <div class="relative">
+                    <i class="fa-solid fa-user-astronaut absolute left-4 top-3.5 text-slate-400"></i>
+                    <input type="text" id="player-name-input" value="Captain Alex" class="w-full glass pl-11 pr-4 py-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-cyan-400 bg-slate-900/90 text-white font-medium">
+                </div>
+            </div>
+
+            <!-- Host or Join Tabs -->
+            <div class="grid grid-cols-2 gap-3 p-1 glass rounded-2xl bg-slate-900/60">
+                <button id="tab-join-btn" class="py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition bg-cyan-600 text-white shadow">Join Room</button>
+                <button id="tab-host-btn" class="py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition text-slate-400 hover:text-white">Host New Room</button>
+            </div>
+
+            <!-- Join Room Panel -->
+            <div id="panel-join" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Enter 4-Digit Room Code</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-key absolute left-4 top-3.5 text-slate-400"></i>
+                        <input type="text" id="join-code-input" placeholder="e.g. A7X9" maxlength="6" class="w-full glass pl-11 pr-4 py-3 rounded-xl text-sm uppercase tracking-widest outline-none focus:ring-2 focus:ring-cyan-400 bg-slate-900/90 text-white font-bold">
+                    </div>
+                </div>
+                <button id="join-room-btn" class="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 font-bold text-sm tracking-wider uppercase transition shadow-lg shadow-cyan-600/30 flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span>Join Room & Sail</span>
+                </button>
+            </div>
+
+            <!-- Host Room Panel -->
+            <div id="panel-host" class="space-y-4 hidden">
+                <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/50 flex items-center justify-between">
+                    <div>
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Generated Room Code</div>
+                        <div id="generated-code-display" class="text-2xl font-black text-cyan-400 tracking-widest">----</div>
+                    </div>
+                    <button id="copy-code-btn" class="glass px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 text-cyan-300">
+                        <i class="fa-regular fa-copy mr-1"></i> Copy Code
+                    </button>
+                </div>
+                <button id="host-room-btn" class="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold text-sm tracking-wider uppercase transition shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-anchor"></i>
+                    <span>Host Room & Launch</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK & Realistic Game Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // App & Cloud State
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'boat-archipelago-v3';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        let db, auth, currentUser = null;
+        let activeRoomCode = "SOLO";
+        let isHost = false;
+        let isCloudConnected = false;
+        let unsubscribeRoom = null;
+
+        // Three.js Objects
+        let scene, camera, renderer;
+        let localBoat = null;
+        let localBoatColor = 0xef4444;
+        let remoteBoats = {};
+        let islands = [];
+        let stars = [];
+        let foamParticles = [];
+        let buoys = [];
+        let waterMesh, waterGeo, waterMat;
+        let lighthouses = [];
+        let clock = new THREE.Clock();
+
+        // Gameplay & Environmental state
+        let score = 0;
+        let cameraMode = 0; // 0: Chase, 1: Overhead, 2: Cockpit
+        let isNight = false;
+        let dirLight, hemiLight, ambientLight;
+        let beachedTimer = 0;
+
+        // Audio System
+        let audioCtx = null;
+        let engineOsc = null;
+        let engineGain = null;
+        let waterNoiseNode = null;
+        let waterGainNode = null;
+        let audioInitialized = false;
+
+        const keys = { KeyW: false, KeyS: false, KeyA: false, KeyD: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, ShiftLeft: false };
+
+        // Advanced GTA 5 Hydrodynamic Boat Physics Simulation
+        const boatPhysics = {
+            speed: 0,
+            maxSpeed: 1.25,
+            accelRate: 0.014,
+            decelRate: 0.008,
+            waterDrag: 0.988,
+            turnSpeed: 0.038,
+            turnAngle: 0,
+            leanAngle: 0,
+            pitchAngle: 0,
+            rollAngle: 0,
+            driftSlip: 0,
+            reboundVector: { x: 0, z: 0 },
+            torqueSpin: 0,
+            ramCooldown: 0
+        };
+
+        const scoreDisplay = document.getElementById('score-display');
+        const speedDisplay = document.getElementById('speed-display');
+        const toast = document.getElementById('toast');
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-1rem)';
+            }, 3000);
+        }
+
+        // Mathematical Gerstner Ocean Wave Calculation for Realistic Buoyancy
+        function getOceanWaveHeight(x, z, time) {
+            const w1 = Math.sin(x * 0.025 + time * 2.2) * 0.6;
+            const w2 = Math.cos(z * 0.03 + time * 1.8) * 0.5;
+            const w3 = Math.sin((x + z) * 0.015 + time * 2.8) * 0.3;
+            return w1 + w2 + w3;
+        }
+
+        // Calculate elevation terrain height of islands for smooth shoreline launching
+        function getIslandLandHeight(x, z) {
+            let maxHeight = 0;
+            let onLand = false;
+            for (let i = 0; i < islands.length; i++) {
+                const island = islands[i];
+                const dx = x - island.x;
+                const dz = z - island.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                const outerRadius = island.radius * 1.05;
+
+                if (dist < outerRadius) {
+                    onLand = true;
+                    // Parabolic dome height curve matching mountain base
+                    const normalizedDist = dist / outerRadius;
+                    const heightFactor = Math.cos(normalizedDist * Math.PI * 0.5);
+                    const currentH = Math.max(0, island.height * 0.45 * heightFactor);
+                    if (currentH > maxHeight) maxHeight = currentH;
+                }
+            }
+            return { height: maxHeight, onLand: onLand };
+        }
+
+        function getOceanWaveNormal(x, z, time) {
+            const delta = 0.5;
+            const hL = getOceanWaveHeight(x - delta, z, time);
+            const hR = getOceanWaveHeight(x + delta, z, time);
+            const hD = getOceanWaveHeight(x, z - delta, time);
+            const hU = getOceanWaveHeight(x, z + delta, time);
+
+            const normal = new THREE.Vector3(hL - hR, 2.0 * delta, hD - hU);
+            return normal.normalize();
+        }
+
+        // Initialize Audio
+        function initAudio() {
+            if (audioInitialized) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                engineOsc = audioCtx.createOscillator();
+                engineGain = audioCtx.createGain();
+                engineOsc.type = 'sawtooth';
+                engineOsc.frequency.setValueAtTime(40, audioCtx.currentTime);
+                engineGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(320, audioCtx.currentTime);
+
+                engineOsc.connect(filter);
+                filter.connect(engineGain);
+                engineGain.connect(audioCtx.destination);
+                engineOsc.start();
+
+                const bufferSize = audioCtx.sampleRate * 2;
+                const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1;
+                }
+                waterNoiseNode = audioCtx.createBufferSource();
+                waterNoiseNode.buffer = noiseBuffer;
+                waterNoiseNode.loop = true;
+
+                const waterFilter = audioCtx.createBiquadFilter();
+                waterFilter.type = 'bandpass';
+                waterFilter.frequency.setValueAtTime(750, audioCtx.currentTime);
+
+                waterGainNode = audioCtx.createGain();
+                waterGainNode.gain.setValueAtTime(0.0, audioCtx.currentTime);
+
+                waterNoiseNode.connect(waterFilter);
+                waterFilter.connect(waterGainNode);
+                waterGainNode.connect(audioCtx.destination);
+                waterNoiseNode.start();
+
+                audioInitialized = true;
+                document.getElementById('audio-start-prompt').classList.add('hidden');
+            } catch(e) {
+                console.warn("Audio error:", e);
+            }
+        }
+
+        function playCrashSound() {
+            if (!audioCtx || !audioInitialized) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(25, audioCtx.currentTime + 0.4);
+            g.gain.setValueAtTime(0.35, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.41);
+        }
+
+        function updateAudio(speedRatio) {
+            if (!audioCtx || !audioInitialized) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const targetFreq = 42 + Math.abs(speedRatio) * 140;
+            engineOsc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.05);
+            engineGain.gain.setTargetAtTime(0.08 + Math.abs(speedRatio) * 0.14, audioCtx.currentTime, 0.05);
+            waterGainNode.gain.setTargetAtTime(Math.abs(speedRatio) * 0.18, audioCtx.currentTime, 0.05);
+        }
+
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = '';
+            for (let i = 0; i < 4; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return code;
+        }
+
+        async function initFirebase() {
+            if (!firebaseConfig) return;
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                currentUser = auth.currentUser;
+                isCloudConnected = true;
+            } catch (err) {
+                console.warn("Cloud connection error, running single player fallback:", err);
+            }
+        }
+
+        // Setup Realistic 3D World & Ocean Surface Shader
+        function init3DWorld() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x38bdf8);
+            scene.fog = new THREE.FogExp2(0x38bdf8, 0.0006);
+
+            camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.5, 4000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+            container.appendChild(renderer.domElement);
+
+            // Lighting Setup for Natural Ocean Reflections
+            ambientLight = new THREE.AmbientLight(0xbae6fd, 0.5);
+            scene.add(ambientLight);
+
+            hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x0369a1, 0.75);
+            hemiLight.position.set(0, 500, 0);
+            scene.add(hemiLight);
+
+            dirLight = new THREE.DirectionalLight(0xfffbeb, 1.7);
+            dirLight.position.set(400, 600, 250);
+            dirLight.castShadow = true;
+            dirLight.shadow.camera.top = 800;
+            dirLight.shadow.camera.bottom = -800;
+            dirLight.shadow.camera.left = -800;
+            dirLight.shadow.camera.right = 800;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 1800;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            // Dynamic High-Resolution Ocean Surface
+            waterGeo = new THREE.PlaneGeometry(7500, 7500, 160, 160);
+            waterMat = new THREE.MeshStandardMaterial({
+                color: 0x0284c7,
+                roughness: 0.05,
+                metalness: 0.92,
+                flatShading: true,
+                wireframe: false
+            });
+            waterMesh = new THREE.Mesh(waterGeo, waterMat);
+            waterMesh.rotation.x = -Math.PI / 2;
+            waterMesh.receiveShadow = true;
+            scene.add(waterMesh);
+
+            createRealisticArchipelago();
+            createCollectibles();
+            createNavigationalBuoys();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // Realistic Archipelago Islands with Diverse Biomes, Geometries & Landmarks
+        function createRealisticArchipelago() {
+            const islandData = [
+                { x: 0, z: 0, r: 85, h: 32, type: 'tropical', name: 'Paradise Island' },
+                { x: 340, z: -300, r: 120, h: 65, type: 'volcanic', name: 'Blackstone Peak' },
+                { x: -380, z: 320, r: 95, h: 52, type: 'cliffs', name: 'Ironhead Cliffs' },
+                { x: 440, z: 410, r: 115, h: 48, type: 'lighthouse', name: 'Beacon Isle' },
+                { x: -420, z: -380, r: 100, h: 24, type: 'atoll', name: 'Emerald Atoll' },
+                { x: 160, z: -520, r: 75, h: 38, type: 'desert', name: 'Sunken Dune' },
+                { x: -230, z: -200, r: 65, h: 28, type: 'pine', name: 'Mist Ridge' }
+            ];
+
+            islandData.forEach(data => {
+                const islandGroup = new THREE.Group();
+                islandGroup.position.set(data.x, 0, data.z);
+
+                // Island Biome Aesthetics Config
+                let rockColor = 0x15803d;
+                let beachColor = 0xfde047;
+                let foliageColor1 = 0x14532d;
+                let foliageColor2 = 0x166534;
+                let treeType = 'palm'; // 'palm', 'pine', 'cactus'
+
+                if (data.type === 'volcanic') {
+                    // Volcanic Glowing Crater Light
+                    const lavaLight = new THREE.PointLight(0xf97316, 6, 200);
+                    lavaLight.position.set(0, data.h + 4, 0);
+                    islandGroup.add(lavaLight);
+
+                    const craterGlow = new THREE.Mesh(
+                        new THREE.CylinderGeometry(14, 2, 4, 16),
+                        new THREE.MeshBasicMaterial({ color: 0xeab308 })
+                    );
+                    craterGlow.position.y = data.h + 1;
+                    islandGroup.add(craterGlow);
+                }
+
+                scene.add(islandGroup);
+                islands.push({ x: data.x, z: data.z, radius: data.r, height: data.h, name: data.name });
+            });
+        }
+
+        // Floating Collectible Golden Stars
+        function createCollectibles() {
+            const starGeo = new THREE.OctahedronGeometry(1.8, 0);
+            const starMat = new THREE.MeshStandardMaterial({
+                color: 0xfacc15,
+                emissive: 0xeab308,
+                emissiveIntensity: 0.6,
+                roughness: 0.2,
+                metalness: 0.9
+            });
+
+            for (let i = 0; i < 24; i++) {
+                const angle = (i / 24) * Math.PI * 2;
+                const dist = 180 + Math.random() * 450;
+                const x = Math.cos(angle) * dist;
+                const z = Math.sin(angle) * dist;
+
+                const star = new THREE.Mesh(starGeo, starMat);
+                star.position.set(x, 3.5, z);
+                star.castShadow = true;
+                scene.add(star);
+                stars.push({ mesh: star, x, z, active: true, id: i });
+            }
+        }
+
+        // Navigational Buoys with Pulsing Beacon Lights
+        function createNavigationalBuoys() {
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const dist = 320 + (i % 2) * 120;
+                const x = Math.cos(angle) * dist;
+                const z = Math.sin(angle) * dist;
+
+                const buoyGroup = new THREE.Group();
+                buoyGroup.position.set(x, 0, z);
+
+                const base = new THREE.Mesh(
+                    new THREE.CylinderGeometry(1.5, 2.2, 4, 12),
+                    new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0xef4444 : 0x22c55e, roughness: 0.4 })
+                );
+                base.position.y = 1;
+                buoyGroup.add(base);
+
+                const lightMesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.6, 8, 8),
+                    new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xff0000 : 0x00ff00 })
+                );
+                lightMesh.position.y = 3.6;
+                buoyGroup.add(lightMesh);
+
+                const buoyLight = new THREE.PointLight(i % 2 === 0 ? 0xff0000 : 0x00ff00, 2, 35);
+                buoyLight.position.y = 3.6;
+                buoyGroup.add(buoyLight);
+
+                scene.add(buoyGroup);
+                buoys.push({ group: buoyGroup, light: buoyLight, origY: 0, x, z });
+            }
+        }
+
+        // Detailed GTA 5 High-Performance Speedboat 3D Mesh
+        function createBoatMesh(colorHex = 0xef4444, isLocal = false) {
+            const group = new THREE.Group();
+
+            // Main Molded Deep-V Speedboat Hull
+            const hullShape = new THREE.Shape();
+            hullShape.moveTo(0, 7.5);
+            hullShape.bezierCurveTo(2.4, 4.0, 2.6, -3.5, 2.2, -7.5);
+            hullShape.lineTo(-2.2, -7.5);
+            hullShape.bezierCurveTo(-2.6, -3.5, -2.4, 4.0, 0, 7.5);
+
+            const extrudeSettings = { depth: 2.2, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.4, bevelThickness: 0.5 };
+            const hullGeo = new THREE.ExtrudeGeometry(hullShape, extrudeSettings);
+            hullGeo.rotateX(Math.PI / 2);
+            hullGeo.center();
+
+            const hullMat = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                roughness: 0.2,
+                metalness: 0.4,
+                envMapIntensity: 1.5
+            });
+            const hull = new THREE.Mesh(hullGeo, hullMat);
+            hull.position.y = 0.9;
+            hull.castShadow = true;
+            hull.receiveShadow = true;
+            group.add(hull);
+
+            // White Deck Top & Seating Cockpit
+            const deck = new THREE.Mesh(
+                new THREE.BoxGeometry(4.2, 0.6, 12),
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 })
+            );
+            deck.position.set(0, 1.8, -0.2);
+            group.add(deck);
+
+            // Tinted Glass Windshield
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, metalness: 0.9, transparent: true, opacity: 0.75 });
+            const windshield = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.2, 0.4), glassMat);
+            windshield.position.set(0, 2.7, 1.5);
+            windshield.rotation.x = -0.35;
+            group.add(windshield);
+
+            // Dual Outboard Engine Motors & Propellers
+            for (let side of [-1, 1]) {
+                const motor = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.9, 2.0, 1.4),
+                    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 })
+                );
+                motor.position.set(side * 1.2, 1.4, -6.6);
+                group.add(motor);
+
+                const prop = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.8, 0.8, 0.15),
+                    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 })
+                );
+                prop.position.set(side * 1.2, 0.5, -7.3);
+                group.add(prop);
+            }
+
+            // Player Overhead Name & Rank Label
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+            ctx.beginPath();
+            ctx.roundRect(10, 10, 236, 44, 12);
+            ctx.fill();
+            ctx.font = 'bold 22px Outfit, sans-serif';
+            ctx.fillStyle = isLocal ? '#38bdf8' : '#f43f5e';
+            ctx.textAlign = 'center';
+            ctx.fillText(isLocal ? 'YOU (Captain)' : 'Captain', 128, 38);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.position.set(0, 6.2, 0);
+            sprite.scale.set(6, 1.5, 1);
+            group.add(sprite);
+
+            scene.add(group);
+            return group;
+        }
+
+        // Engine Wake & Spray Foam Particles
+        function spawnFoamParticle(x, y, z, boatSpeed) {
+            const size = 0.6 + Math.random() * 0.8;
+            const pGeo = new THREE.PlaneGeometry(size, size);
+            const pMat = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.75,
+                depthWrite: false
+            });
+            const particle = new THREE.Mesh(pGeo, pMat);
+            particle.rotation.x = -Math.PI / 2;
+            particle.position.set(x + (Math.random() - 0.5) * 1.2, y + 0.1, z + (Math.random() - 0.5) * 1.2);
+            scene.add(particle);
+
+            foamParticles.push({
+                mesh: particle,
+                life: 1.0,
+                decay: 0.02 + Math.random() * 0.025,
+                scaleSpeed: 0.03
+            });
+        }
+
+        // Main Physics Engine (GTA V Hydrodynamics + Dynamic Shore Launch & Over-Island Travel)
+        function updatePhysics(delta, time) {
+            if (!localBoat) return;
+
+            const forward = keys.KeyW || keys.ArrowUp;
+            const backward = keys.KeyS || keys.ArrowDown;
+            const turnLeft = keys.KeyA || keys.ArrowLeft;
+            const turnRight = keys.KeyD || keys.ArrowRight;
+            const boosting = keys.ShiftLeft;
+
+            const topSpeed = boosting ? boatPhysics.maxSpeed * 1.45 : boatPhysics.maxSpeed;
+
+            // Engine Power & Water Drag
+            if (forward) {
+                boatPhysics.speed = THREE.MathUtils.lerp(boatPhysics.speed, topSpeed, boatPhysics.accelRate);
+            } else if (backward) {
+                boatPhysics.speed = THREE.MathUtils.lerp(boatPhysics.speed, -topSpeed * 0.45, boatPhysics.accelRate * 0.8);
+            } else {
+                boatPhysics.speed *= boatPhysics.waterDrag;
+            }
+
+            // High Speed Carving Turn Handling
+            if (Math.abs(boatPhysics.speed) > 0.02) {
+                const turnFactor = boatPhysics.speed / topSpeed;
+                if (turnLeft) boatPhysics.turnAngle += boatPhysics.turnSpeed * turnFactor;
+                if (turnRight) boatPhysics.turnAngle -= boatPhysics.turnSpeed * turnFactor;
+
+                // Hull banking/roll into turn (GTA style weight transfer)
+                const targetLean = (turnLeft ? 0.32 : 0) + (turnRight ? -0.32 : 0);
+                boatPhysics.leanAngle = THREE.MathUtils.lerp(boatPhysics.leanAngle, targetLean * turnFactor, 0.1);
+            } else {
+                boatPhysics.leanAngle = THREE.MathUtils.lerp(boatPhysics.leanAngle, 0, 0.1);
+            }
+
+            // Rebound impulse velocity dampening
+            boatPhysics.reboundVector.x *= 0.88;
+            boatPhysics.reboundVector.z *= 0.88;
+
+            // Calculate new position
+            const moveX = Math.sin(boatPhysics.turnAngle) * boatPhysics.speed + boatPhysics.reboundVector.x;
+            const moveZ = Math.cos(boatPhysics.turnAngle) * boatPhysics.speed + boatPhysics.reboundVector.z;
+
+            const nextX = localBoat.position.x + moveX;
+            const nextZ = localBoat.position.z + moveZ;
+
+            // Island Collision & Shore Launch Physics
+            const landData = getIslandLandHeight(nextX, nextZ);
+
+            if (landData.onLand) {
+                // Boat is on/near island shore!
+                const currentSpeedVal = Math.abs(boatPhysics.speed);
+
+                // Slide smoothly up land elevation
+                localBoat.position.y = THREE.MathUtils.lerp(localBoat.position.y, landData.height + 0.8, 0.2);
+
+                // Heavy ground drag slows boat on land
+                boatPhysics.speed *= 0.94;
+
+                // Move boat forward onto land according to momentum
+                localBoat.position.x = nextX;
+                localBoat.position.z = nextZ;
+
+                // Detect if boat has come to a stop while stranded on land
+                if (currentSpeedVal < 0.05) {
+                    beachedTimer += delta;
+                    if (beachedTimer > 2.5) {
+                        respawnBoat();
+                        beachedTimer = 0;
+                    }
+                } else {
+                    beachedTimer = 0;
+                }
+            } else {
+                // Open Water Buoyancy & Wave Physics
+                beachedTimer = 0;
+                const waveY = getOceanWaveHeight(nextX, nextZ, time);
+                const targetY = waveY + 0.5;
+
+                // Smooth vertical floating dampening
+                localBoat.position.y = THREE.MathUtils.lerp(localBoat.position.y, targetY, 0.18);
+                localBoat.position.x = nextX;
+                localBoat.position.z = nextZ;
+
+                // Pitching hull bow lift on acceleration
+                const accelPitch = (forward ? -0.18 : 0) + (backward ? 0.12 : 0);
+                boatPhysics.pitchAngle = THREE.MathUtils.lerp(boatPhysics.pitchAngle, accelPitch, 0.08);
+            }
+
+            // Apply orientation angles to boat mesh
+            localBoat.rotation.y = boatPhysics.turnAngle;
+            localBoat.rotation.z = boatPhysics.leanAngle;
+            localBoat.rotation.x = boatPhysics.pitchAngle;
+
+            // Spawn foam particles behind engine
+            if (Math.abs(boatPhysics.speed) > 0.15) {
+                const backX = localBoat.position.x - Math.sin(boatPhysics.turnAngle) * 6.5;
+                const backZ = localBoat.position.z - Math.cos(boatPhysics.turnAngle) * 6.5;
+                spawnFoamParticle(backX, localBoat.position.y, backZ, boatPhysics.speed);
+            }
+
+            // Collect Stars
+            stars.forEach(star => {
+                if (star.active) {
+                    const dx = localBoat.position.x - star.x;
+                    const dz = localBoat.position.z - star.z;
+                    if (Math.sqrt(dx * dx + dz * dz) < 8.0) {
+                        star.active = false;
+                        star.mesh.visible = false;
+                        score += 10;
+                        scoreDisplay.textContent = score;
+                        showToast("+10 Stars Collected!");
+                    }
+                }
+            });
+
+            // Update Audio & HUD Speedometer
+            const knots = Math.round(Math.abs(boatPhysics.speed) * 48);
+            speedDisplay.textContent = `${knots} kn`;
+            updateAudio(boatPhysics.speed / topSpeed);
+        }
+
+        function respawnBoat() {
+            if (!localBoat) return;
+            localBoat.position.set(0, 2, 80);
+            boatPhysics.speed = 0;
+            boatPhysics.reboundVector = { x: 0, z: 0 };
+            boatPhysics.turnAngle = 0;
+            showToast("Boat Respawned in Open Water!");
+        }
+
+        // Camera Follow Logic
+        function updateCamera() {
+            if (!localBoat) return;
+
+            if (cameraMode === 0) {
+                // Chase Cam (3rd Person Behind Boat)
+                const dist = 32;
+                const height = 14;
+                const targetX = localBoat.position.x - Math.sin(localBoat.rotation.y) * dist;
+                const targetZ = localBoat.position.z - Math.cos(localBoat.rotation.y) * dist;
+
+                camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, 0.08);
+                camera.position.y = THREE.MathUtils.lerp(camera.position.y, localBoat.position.y + height, 0.08);
+                camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, 0.08);
+                camera.lookAt(localBoat.position.x, localBoat.position.y + 3, localBoat.position.z);
+            } else if (cameraMode === 1) {
+                // Overhead Tactical View
+                camera.position.set(localBoat.position.x, localBoat.position.y + 160, localBoat.position.z + 20);
+                camera.lookAt(localBoat.position);
+            } else if (cameraMode === 2) {
+                // Driver Cockpit View
+                const forwardX = Math.sin(localBoat.rotation.y) * 1.5;
+                const forwardZ = Math.cos(localBoat.rotation.y) * 1.5;
+                camera.position.set(localBoat.position.x + forwardX, localBoat.position.y + 3.2, localBoat.position.z + forwardZ);
+                const lookAtX = localBoat.position.x + Math.sin(localBoat.rotation.y) * 50;
+                const lookAtZ = localBoat.position.z + Math.cos(localBoat.rotation.y) * 50;
+                camera.lookAt(lookAtX, localBoat.position.y + 3.2, lookAtZ);
+            }
+        }
+
+        // Animate Ocean Waves, Foam Particles & Buoys
+        function animateEnvironment(time) {
+            // Animate Water Geometry Vertices
+            const pos = waterGeo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const u = pos.getX(i);
+                const v = pos.getY(i);
+                const h = getOceanWaveHeight(u, v, time);
+                pos.setZ(i, h);
+            }
+            waterGeo.computeVertexNormals();
+            waterGeo.attributes.position.needsUpdate = true;
+
+            // Animate Buoy Floating
+            buoys.forEach(buoy => {
+                const waveY = getOceanWaveHeight(buoy.x, buoy.z, time);
+                buoy.group.position.y = waveY;
+                buoy.group.rotation.z = Math.sin(time * 2 + buoy.x) * 0.15;
+            });
+
+            // Animate Floating Stars Spinning
+            stars.forEach(star => {
+                if (star.active) {
+                    star.mesh.rotation.y += 0.03;
+                    star.mesh.position.y = 3.5 + Math.sin(time * 3 + star.id) * 0.6;
+                }
+            });
+
+            // Fade and expand wake foam particles
+            for (let i = foamParticles.length - 1; i >= 0; i--) {
+                const p = foamParticles[i];
+                p.life -= p.decay;
+                p.mesh.scale.x += p.scaleSpeed;
+                p.mesh.scale.y += p.scaleSpeed;
+                p.mesh.material.opacity = p.life * 0.7;
+
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    foamParticles.splice(i, 1);
+                }
+            }
+        }
+
+        // Real-Time Firebase Multiplayer Syncing
+        async function syncMultiplayer() {
+            if (!isCloudConnected || !currentUser || activeRoomCode === "SOLO") return;
+
+            try {
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', `room_${activeRoomCode}`, currentUser.uid);
+                await setDoc(playerRef, {
+                    x: localBoat.position.x,
+                    y: localBoat.position.y,
+                    z: localBoat.position.z,
+                    rotY: localBoat.rotation.y,
+                    rotZ: localBoat.rotation.z,
+                    score: score,
+                    color: localBoatColor,
+                    lastSeen: Date.now()
+                }, { merge: true });
+            } catch (e) {
+                console.warn("Sync error:", e);
+            }
+        }
+
+        function listenToRoomPlayers() {
+            if (!isCloudConnected || activeRoomCode === "SOLO") return;
+
+            const roomCol = collection(db, 'artifacts', appId, 'public', 'data', `room_${activeRoomCode}`);
+            if (unsubscribeRoom) unsubscribeRoom();
+
+            unsubscribeRoom = onSnapshot(roomCol, (snapshot) => {
+                snapshot.forEach(docSnap => {
+                    const id = docSnap.id;
+                    if (currentUser && id === currentUser.uid) return;
+
+                    const data = docSnap.data();
+                    if (!remoteBoats[id]) {
+                        remoteBoats[id] = createBoatMesh(data.color || 0x3b82f6, false);
+                    }
+                    const rBoat = remoteBoats[id];
+                    rBoat.position.set(data.x, data.y, data.z);
+                    rBoat.rotation.y = data.rotY || 0;
+                    rBoat.rotation.z = data.rotZ || 0;
+                });
+            }, (err) => console.warn("Snapshot error:", err));
+        }
+
+        // Main Animation & Render Loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            updatePhysics(delta, time);
+            updateCamera();
+            animateEnvironment(time);
+
+            if (Math.floor(time * 20) % 3 === 0) {
+                syncMultiplayer();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Input & Controls Handling
+        function setupEventListeners() {
+            window.addEventListener('keydown', (e) => {
+                if (document.activeElement.tagName === 'INPUT') return;
+                if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+                initAudio();
+            });
+
+            window.addEventListener('keyup', (e) => {
+                if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
+            });
+
+            // Enable Audio Prompt
+            document.getElementById('enable-audio-btn').addEventListener('click', initAudio);
+
+            // Manual Respawn Button
+            document.getElementById('respawn-btn').addEventListener('click', respawnBoat);
+
+            // Camera Toggle Button
+            document.getElementById('cam-toggle-btn').addEventListener('click', () => {
+                cameraMode = (cameraMode + 1) % 3;
+                const modes = ['Chase Cam', 'Overhead', 'Cockpit'];
+                document.getElementById('cam-mode-text').textContent = modes[cameraMode];
+            });
+
+            // Day/Night Toggle Button
+            document.getElementById('time-toggle-btn').addEventListener('click', () => {
+                isNight = !isNight;
+                if (isNight) {
+                    scene.background.setHex(0x020617);
+                    scene.fog.color.setHex(0x020617);
+                    dirLight.intensity = 0.2;
+                    ambientLight.intensity = 0.15;
+                    showToast("Night Mode Enabled");
+                } else {
+                    scene.background.setHex(0x38bdf8);
+                    scene.fog.color.setHex(0x38bdf8);
+                    dirLight.intensity = 1.7;
+                    ambientLight.intensity = 0.5;
+                    showToast("Daylight Mode Enabled");
+                }
+            });
+
+            // Host & Join Room Tab Controls
+            const tabJoin = document.getElementById('tab-join-btn');
+            const tabHost = document.getElementById('tab-host-btn');
+            const panelJoin = document.getElementById('panel-join');
+            const panelHost = document.getElementById('panel-host');
+
+            tabJoin.addEventListener('click', () => {
+                tabJoin.className = "py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition bg-cyan-600 text-white shadow";
+                tabHost.className = "py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition text-slate-400 hover:text-white";
+                panelJoin.classList.remove('hidden');
+                panelHost.classList.add('hidden');
+            });
+
+            tabHost.addEventListener('click', () => {
+                tabHost.className = "py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition bg-cyan-600 text-white shadow";
+                tabJoin.className = "py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition text-slate-400 hover:text-white";
+                panelHost.classList.remove('hidden');
+                panelJoin.classList.add('hidden');
+                
+                const newCode = generateRoomCode();
+                document.getElementById('generated-code-display').textContent = newCode;
+            });
+
+            document.getElementById('copy-code-btn').addEventListener('click', () => {
+                const code = document.getElementById('generated-code-display').textContent;
+                document.execCommand('copy');
+                showToast(`Code ${code} Copied to Clipboard!`);
+            });
+
+            // Start Game Buttons
+            document.getElementById('join-room-btn').addEventListener('click', () => {
+                const code = document.getElementById('join-code-input').value.trim().toUpperCase() || 'A7X9';
+                startGame(code, false);
+            });
+
+            document.getElementById('host-room-btn').addEventListener('click', () => {
+                const code = document.getElementById('generated-code-display').textContent;
+                startGame(code, true);
+            });
+        }
+
+        function startGame(roomCode, hostFlag) {
+            activeRoomCode = roomCode;
+            isHost = hostFlag;
+
+            document.getElementById('lobby-modal').classList.add('hidden');
+            document.getElementById('ui-overlay').classList.remove('hidden');
+            document.getElementById('active-room-display').textContent = activeRoomCode;
+
+            localBoat = createBoatMesh(localBoatColor, true);
+            localBoat.position.set(0, 2, 80);
+
+            listenToRoomPlayers();
+            showToast(`Joined Room ${activeRoomCode} as Captain!`);
+        }
+
+        // Initialize Everything on Load
+        window.onload = async function() {
+            await initFirebase();
+            init3DWorld();
+            setupEventListeners();
+            animate();
+        };
+    </script>
+</body>
+</html>
